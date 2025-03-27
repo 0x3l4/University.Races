@@ -12,6 +12,8 @@
 #include <mutex>
 #include <string>
 #include <sstream>
+#include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
 
 #define MAX_LOADSTRING 100
 
@@ -45,8 +47,11 @@ std::atomic<bool> raceOver(false);
 std::mutex drawMutex;
 std::atomic<bool> raceRunning(false);
 std::vector<int> results;
+Gdiplus::Image* racerImage;
+Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 HWND hWnd;
 HWND hStartButton, hStopButton;
+HBITMAP hRacerBitmap;
 
 void Race(int index) {
     std::random_device rd;
@@ -209,10 +214,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
     case WM_CREATE:
-        hStartButton = CreateWindow(L"BUTTON", L"День", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+        hStartButton = CreateWindow(L"BUTTON", L"Старт", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
             10, 10, 80, 30, hWnd, (HMENU)BUTTON_START, GetModuleHandle(NULL), NULL);
-        hStopButton = CreateWindow(L"BUTTON", L"Ночь", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+        hStopButton = CreateWindow(L"BUTTON", L"Стоп", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
             100, 10, 80, 30, hWnd, (HMENU)BUTTON_STOP, GetModuleHandle(NULL), NULL);
+        hRacerBitmap = (HBITMAP)LoadImage(NULL, L"racer.png", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+        ULONG_PTR gdiplusToken;
+        Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
+        racerImage = new Gdiplus::Image(L"racer.png");
         break;
     case WM_COMMAND:
         {
@@ -242,23 +252,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
+            HDC hdcMem = CreateCompatibleDC(hdc);
 
-            MoveToEx(hdc, START_X, 40, NULL);
-            LineTo(hdc, START_X, 40 + NUM_RACERS * 40);
-
-            // Рисуем линию финиша
-            MoveToEx(hdc, START_X + FINISH_LINE * 5, 40, NULL);
-            LineTo(hdc, START_X + FINISH_LINE * 5, 40 + NUM_RACERS * 40);
+            HBITMAP oldBitmap = (HBITMAP)SelectObject(hdcMem, hRacerBitmap);
+            BITMAP bitmap;
+            GetObject(hRacerBitmap, sizeof(BITMAP), &bitmap);
 
             for (int i = 0; i < NUM_RACERS; i++) {
-                Rectangle(hdc, 50, 50 + i * 40, 50 + racers[i].position * 5, 80 + i * 40);
+                int x = START_X + racers[i].position * 5;
+                int y = 50 + i * 40;
+                Gdiplus::Graphics graphics(hdc);
+                graphics.DrawImage(racerImage, x, y, 150, 44);
 
-                std::wstringstream ws;
+                std::wstring ws = L"Racer " + std::to_wstring(racers[i].id);
                 if (racers[i].finished) {
-                    ws << L"Вырос - " << racers[i].place;
+                    ws += L" - " + std::to_wstring(racers[i].place) + L" place";
                 }
-                TextOut(hdc, START_X + 10, 60 + i * 40, ws.str().c_str(), ws.str().length());
+                TextOut(hdc, START_X + 10, y + 30, ws.c_str(), ws.length());
             }
+
+            SelectObject(hdcMem, oldBitmap);
+            DeleteDC(hdcMem);
 
             // TODO: Добавьте сюда любой код прорисовки, использующий HDC...
             EndPaint(hWnd, &ps);
@@ -266,6 +280,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_DESTROY:
         PostQuitMessage(0);
+        delete racerImage;
+        Gdiplus::GdiplusShutdown(gdiplusToken);
         break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);

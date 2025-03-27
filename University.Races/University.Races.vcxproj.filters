@@ -45,5 +45,8 @@
     <Image Include="University.Races.ico">
       <Filter>Файлы ресурсов</Filter>
     </Image>
+    <Image Include="racer.png">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
   </ItemGroup>
 </Project>

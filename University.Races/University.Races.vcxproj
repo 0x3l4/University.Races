@@ -139,6 +139,7 @@
     <ResourceCompile Include="University.Races.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="racer.png" />
     <Image Include="small.ico" />
     <Image Include="University.Races.ico" />
   </ItemGroup>
