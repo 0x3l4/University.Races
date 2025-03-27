@@ -139,8 +139,14 @@
     <ResourceCompile Include="University.Races.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="big_data_racer.png" />
+    <Image Include="pattern_designs_racer.png" />
+    <Image Include="pregraduate_practice_racer.png" />
+    <Image Include="project_activities_racer.png" />
     <Image Include="racer.png" />
     <Image Include="small.ico" />
+    <Image Include="theory_computational_processes_racer.png" />
+    <Image Include="theory_programming_languages_racer.png" />
     <Image Include="University.Races.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

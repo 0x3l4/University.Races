@@ -15,6 +15,8 @@
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
 
+using namespace Gdiplus;
+
 #define MAX_LOADSTRING 100
 
 #define NUM_RACERS 5
@@ -22,6 +24,7 @@
 #define START_X 50
 #define BUTTON_START 1
 #define BUTTON_STOP 2
+#define BUTTON_REFRESH 3
 
 // Глобальные переменные:
 HINSTANCE hInst;                                // текущий экземпляр
@@ -39,6 +42,7 @@ struct Racer {
     int id;
     bool finished;
     int place;
+    Image* image;
 };
 
 std::vector<Racer> racers(NUM_RACERS);
@@ -49,9 +53,29 @@ std::atomic<bool> raceRunning(false);
 std::vector<int> results;
 Gdiplus::Image* racerImage;
 Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+ULONG_PTR gdiplusToken;
 HWND hWnd;
 HWND hStartButton, hStopButton;
 HBITMAP hRacerBitmap;
+
+void LoadRacerImages() {
+    std::vector<std::wstring> imageFiles = {
+        L"big_data_racer.png",
+        L"theory_programming_languages_racer.png",
+        L"project_activities_racer.png",
+        L"pattern_designs_racer.png",
+        L"theory_computational_processes_racer.png"
+    };
+
+    for (int i = 0; i < NUM_RACERS; i++) {
+        if (i < imageFiles.size()) {
+            racers[i].image = new Image(imageFiles[i].c_str());
+            if (racers[i].image->GetLastStatus() != Ok) {
+                MessageBox(NULL, (L"Ошибка загрузки " + imageFiles[i]).c_str(), L"Ошибка", MB_OK | MB_ICONERROR);
+            }
+        }
+    }
+}
 
 void Race(int index) {
     std::random_device rd;
@@ -60,9 +84,7 @@ void Race(int index) {
     std::uniform_int_distribution<int> sleepDist(500, 1500);
 
     while (true) {
-        while (!raceRunning) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+        if (!raceRunning) return;  // Если гонка остановлена — завершаем поток
 
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepDist(gen)));
 
@@ -88,7 +110,7 @@ void Race(int index) {
 
         if (allFinished) {
             raceRunning = false;
-            break;
+            return;  // Завершаем поток
         }
     }
 }
@@ -120,7 +142,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_UNIVERSITYRACES));
 
     for (int i = 0; i < NUM_RACERS; i++) {
-        racers[i] = { 0, i + 1 };
         threads.emplace_back(Race, i);
     }
 
@@ -136,9 +157,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-    for (auto& t : threads) {
-        t.join();
-    }
+    //for (auto& t : threads) {
+    //    t.join();
+    //}
 
     return (int) msg.wParam;
 }
@@ -214,15 +235,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
     case WM_CREATE:
-        hStartButton = CreateWindow(L"BUTTON", L"Старт", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-            10, 10, 80, 30, hWnd, (HMENU)BUTTON_START, GetModuleHandle(NULL), NULL);
-        hStopButton = CreateWindow(L"BUTTON", L"Стоп", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-            100, 10, 80, 30, hWnd, (HMENU)BUTTON_STOP, GetModuleHandle(NULL), NULL);
-        hRacerBitmap = (HBITMAP)LoadImage(NULL, L"racer.png", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-        ULONG_PTR gdiplusToken;
-        Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
 
-        racerImage = new Gdiplus::Image(L"racer.png");
+        GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+        LoadRacerImages();
+
+        hStartButton = CreateWindow(L"BUTTON", L"Старт", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+            820, 10, 80, 30, hWnd, (HMENU)BUTTON_START, GetModuleHandle(NULL), NULL);
+        hStopButton = CreateWindow(L"BUTTON", L"Стоп", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+            900, 10, 80, 30, hWnd, (HMENU)BUTTON_STOP, GetModuleHandle(NULL), NULL);
+        hStopButton = CreateWindow(L"BUTTON", L"Заново", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+            980, 10, 80, 30, hWnd, (HMENU)BUTTON_REFRESH, GetModuleHandle(NULL), NULL);
         break;
     case WM_COMMAND:
         {
@@ -240,6 +262,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case BUTTON_START:
                 raceRunning = true;
                 break;
+            case BUTTON_REFRESH:
+                if (!raceRunning) {
+                    raceRunning = true;
+
+                    // Очистка списка потоков перед перезапуском
+                    for (auto& t : threads) {
+                        if (t.joinable()) t.join();
+                    }
+                    threads.clear();
+
+                    results.clear();
+                    for (int i = 0; i < NUM_RACERS; i++) {
+                        racers[i].position = 0;
+                        racers[i].finished = false;
+                        racers[i].place = 0;
+                        threads.emplace_back(Race, i);
+                    }
+                    InvalidateRect(hWnd, NULL, TRUE); // Принудительное обновление окна
+                }
+                break;
             case BUTTON_STOP:
                 raceRunning = false;
                 break;
@@ -252,36 +294,51 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
-            HDC hdcMem = CreateCompatibleDC(hdc);
+            Graphics graphics(hdc);
 
-            HBITMAP oldBitmap = (HBITMAP)SelectObject(hdcMem, hRacerBitmap);
-            BITMAP bitmap;
-            GetObject(hRacerBitmap, sizeof(BITMAP), &bitmap);
+            TextOut(hdc, START_X - 20, 20, L"СТАРТ", 5);
+
+            MoveToEx(hdc, START_X, 40, NULL);
+            LineTo(hdc, START_X, 40 + NUM_RACERS * 80);
+
+            int finishX = START_X + (FINISH_LINE) * 5 + 210;
+            TextOut(hdc, finishX - 30, 20, L"ДЕДЛАЙН", 7);
+
+            // Рисуем линию финиша
+            MoveToEx(hdc, START_X + (FINISH_LINE) * 5 + 216, 40, NULL);
+            LineTo(hdc, START_X + (FINISH_LINE) * 5 + 216, 40 + NUM_RACERS * 80);
 
             for (int i = 0; i < NUM_RACERS; i++) {
                 int x = START_X + racers[i].position * 5;
-                int y = 50 + i * 40;
-                Gdiplus::Graphics graphics(hdc);
-                graphics.DrawImage(racerImage, x, y, 150, 44);
+                int y = 50 + i * 80;
+                graphics.DrawImage(racers[i].image, x, y, 216, 39);
 
-                std::wstring ws = L"Racer " + std::to_wstring(racers[i].id);
+                std::wstring ws;
                 if (racers[i].finished) {
-                    ws += L" - " + std::to_wstring(racers[i].place) + L" place";
+                    ws += std::to_wstring(racers[i].place) + L" place";
                 }
-                TextOut(hdc, START_X + 10, y + 30, ws.c_str(), ws.length());
+                TextOut(hdc, START_X + 10, y + 10, ws.c_str(), ws.length());
             }
 
-            SelectObject(hdcMem, oldBitmap);
-            DeleteDC(hdcMem);
 
             // TODO: Добавьте сюда любой код прорисовки, использующий HDC...
             EndPaint(hWnd, &ps);
         }
         break;
     case WM_DESTROY:
-        PostQuitMessage(0);
-        delete racerImage;
+        raceRunning = false;
+
+        // Завершаем потоки корректно
+        for (auto& t : threads) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+        for (auto& racer : racers) {
+            delete racer.image;
+        }
         Gdiplus::GdiplusShutdown(gdiplusToken);
+        PostQuitMessage(0);
         break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
